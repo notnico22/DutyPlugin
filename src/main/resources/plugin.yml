@@ -1,0 +1,37 @@
+name: DutyPlugin
+version: 1.0.0
+main: com.example.dutyplugin.DutyPlugin
+api-version: '1.21'
+author: YourName
+description: A duty tracking plugin with Discord integration
+
+commands:
+  duty:
+    description: Toggle duty status or go on duty for a specific role
+    usage: /duty [duty_name] - Use /duty <name> to go on duty, /duty to go off duty
+    
+  checktime:
+    description: Check your total duty time for a specific duty
+    usage: /checktime <duty_name>
+    
+  resettime:
+    description: Reset duty time for yourself
+    usage: /resettime <duty_name|ALL>
+    permission: duty.reset
+
+permissions:
+  duty.reset:
+    description: Allows resetting duty times
+    default: op
+    
+  duty.*:
+    description: Allows all duty types
+    default: op
+    children:
+      duty.admin: true
+      duty.moderator: true
+      duty.support: true
+      duty.builder: true
+      
+  # Add your custom duty permissions below
+  # duty.DUTYNAME: true for each duty type you want

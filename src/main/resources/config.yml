@@ -1,0 +1,7 @@
+# DutyPlugin Configuration
+
+# Discord Webhook URL for logging
+# Get this from your Discord server settings -> Integrations -> Webhooks
+discord-webhook-url: "https://discord.com/api/webhooks/1434328555575050290/yof7j9B2P-cNlojYzx5sBKTfVhCHvGquo1fr1suNY1lM9bAZfQy6VAaW3TkA8jso03tO"
+
+# You can add additional settings here in the future
