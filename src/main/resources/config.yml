@@ -9,26 +9,37 @@ discord-webhook-url: "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL_HERE"
 # Format:
 #   DutyName:
 #     permission: "duty.permission.here"
+#     group: "luckperms_group_name"  (optional - leave empty "" to disable)
 
 duties:
   Staff:
     permission: "duty.staff"
+    group: "ondutystaff"
   
   Admin:
     permission: "duty.admin"
+    group: "ondutyadmin"
   
   Moderator:
     permission: "duty.moderator"
+    group: "ondutymoderator"
   
   Support:
     permission: "duty.support"
+    group: "ondutysupport"
   
   Builder:
     permission: "duty.builder"
+    group: "ondutybuilder"
   
   Helper:
     permission: "duty.helper"
+    group: "ondutyhelper"
 
 # To add more duties, just copy the format above:
 # YourDutyName:
 #   permission: "duty.yourpermission"
+#   group: "yourluckpermsgroup"
+#
+# If you don't want a duty to add a group, set group to empty:
+#   group: ""

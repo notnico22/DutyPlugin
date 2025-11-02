@@ -1,9 +1,11 @@
 name: DutyPlugin
-version: 1.2.0
+version: 1.3.0
 main: com.example.dutyplugin.DutyPlugin
 api-version: '1.21'
 author: notnico22
-description: A duty tracking plugin with Discord integration
+description: A duty tracking plugin with Discord integration and LuckPerms support
+depend: [LuckPerms]
+softdepend: [LuckPerms]
 
 commands:
   duty:

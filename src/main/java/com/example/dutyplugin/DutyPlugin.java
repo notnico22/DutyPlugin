@@ -1,11 +1,15 @@
 package com.example.dutyplugin;
 
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.model.user.User;
+import net.luckperms.api.node.Node;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -18,7 +22,6 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 public class DutyPlugin extends JavaPlugin {
     
@@ -26,7 +29,9 @@ public class DutyPlugin extends JavaPlugin {
     private FileConfiguration dataConfig;
     private Map<UUID, DutySession> activeSessions;
     private String webhookUrl;
-    private Map<String, String> dutyTypes; // duty name -> permission
+    private Map<String, DutyType> dutyTypes; // duty name -> DutyType object
+    private LuckPerms luckPerms;
+    private boolean luckPermsEnabled = false;
     
     @Override
     public void onEnable() {
@@ -36,6 +41,9 @@ public class DutyPlugin extends JavaPlugin {
         // Create config
         saveDefaultConfig();
         loadConfig();
+        
+        // Hook into LuckPerms
+        setupLuckPerms();
         
         // Load data file
         dataFile = new File(getDataFolder(), "dutydata.yml");
@@ -50,6 +58,11 @@ public class DutyPlugin extends JavaPlugin {
         
         getLogger().info("DutyPlugin has been enabled!");
         getLogger().info("Loaded " + dutyTypes.size() + " duty types from config.");
+        if (luckPermsEnabled) {
+            getLogger().info("LuckPerms integration enabled!");
+        } else {
+            getLogger().warning("LuckPerms not found! Group management will be disabled.");
+        }
     }
     
     @Override
@@ -63,6 +76,14 @@ public class DutyPlugin extends JavaPlugin {
         getLogger().info("DutyPlugin has been disabled!");
     }
     
+    private void setupLuckPerms() {
+        RegisteredServiceProvider<LuckPerms> provider = Bukkit.getServicesManager().getRegistration(LuckPerms.class);
+        if (provider != null) {
+            luckPerms = provider.getProvider();
+            luckPermsEnabled = true;
+        }
+    }
+    
     private void loadConfig() {
         reloadConfig();
         webhookUrl = getConfig().getString("discord-webhook-url", "");
@@ -74,8 +95,10 @@ public class DutyPlugin extends JavaPlugin {
             Set<String> dutyNames = dutiesSection.getKeys(false);
             for (String dutyName : dutyNames) {
                 String permission = dutiesSection.getString(dutyName + ".permission");
+                String group = dutiesSection.getString(dutyName + ".group", "");
+                
                 if (permission != null && !permission.isEmpty()) {
-                    dutyTypes.put(dutyName, permission);
+                    dutyTypes.put(dutyName, new DutyType(dutyName, permission, group));
                 }
             }
         }
@@ -143,6 +166,12 @@ public class DutyPlugin extends JavaPlugin {
             long duration = System.currentTimeMillis() - session.getStartTime();
             String formattedTime = formatDuration(duration);
             
+            // Remove LuckPerms group
+            DutyType dutyType = dutyTypes.get(session.getDutyName());
+            if (dutyType != null && !dutyType.getGroup().isEmpty()) {
+                removeGroup(player, dutyType.getGroup());
+            }
+            
             player.sendMessage(ChatColor.GREEN + "You have gone off duty for " + 
                              ChatColor.YELLOW + session.getDutyName() + 
                              ChatColor.GREEN + "! Duration: " + ChatColor.AQUA + formattedTime);
@@ -166,11 +195,12 @@ public class DutyPlugin extends JavaPlugin {
             return true;
         }
         
+        DutyType dutyType = dutyTypes.get(dutyName);
+        
         // Check permission
-        String requiredPermission = dutyTypes.get(dutyName);
-        if (!player.hasPermission(requiredPermission)) {
+        if (!player.hasPermission(dutyType.getPermission())) {
             player.sendMessage(ChatColor.RED + "You don't have permission to go on duty for " + dutyName + "!");
-            player.sendMessage(ChatColor.GRAY + "Required permission: " + requiredPermission);
+            player.sendMessage(ChatColor.GRAY + "Required permission: " + dutyType.getPermission());
             return true;
         }
         
@@ -187,6 +217,11 @@ public class DutyPlugin extends JavaPlugin {
         DutySession session = new DutySession(dutyName, System.currentTimeMillis());
         activeSessions.put(uuid, session);
         
+        // Add LuckPerms group
+        if (!dutyType.getGroup().isEmpty()) {
+            addGroup(player, dutyType.getGroup());
+        }
+        
         player.sendMessage(ChatColor.GREEN + "You are now on duty for " + 
                          ChatColor.YELLOW + dutyName + ChatColor.GREEN + "!");
         
@@ -194,6 +229,32 @@ public class DutyPlugin extends JavaPlugin {
         sendDiscordMessage(player.getName() + " went ON duty for **" + dutyName + "**", 3066993);
         
         return true;
+    }
+    
+    private void addGroup(Player player, String groupName) {
+        if (!luckPermsEnabled) return;
+        
+        User user = luckPerms.getUserManager().getUser(player.getUniqueId());
+        if (user == null) return;
+        
+        Node node = Node.builder("group." + groupName).build();
+        user.data().add(node);
+        luckPerms.getUserManager().saveUser(user);
+        
+        player.sendMessage(ChatColor.GRAY + "Added to group: " + ChatColor.YELLOW + groupName);
+    }
+    
+    private void removeGroup(Player player, String groupName) {
+        if (!luckPermsEnabled) return;
+        
+        User user = luckPerms.getUserManager().getUser(player.getUniqueId());
+        if (user == null) return;
+        
+        Node node = Node.builder("group." + groupName).build();
+        user.data().remove(node);
+        luckPerms.getUserManager().saveUser(user);
+        
+        player.sendMessage(ChatColor.GRAY + "Removed from group: " + ChatColor.YELLOW + groupName);
     }
     
     private boolean handleCheckTimeCommand(CommandSender sender, String[] args) {
@@ -475,6 +536,30 @@ public class DutyPlugin extends JavaPlugin {
         public PlayerTimeEntry(String playerName, long time) {
             this.playerName = playerName;
             this.time = time;
+        }
+    }
+    
+    private static class DutyType {
+        private final String name;
+        private final String permission;
+        private final String group;
+        
+        public DutyType(String name, String permission, String group) {
+            this.name = name;
+            this.permission = permission;
+            this.group = group;
+        }
+        
+        public String getName() {
+            return name;
+        }
+        
+        public String getPermission() {
+            return permission;
+        }
+        
+        public String getGroup() {
+            return group;
         }
     }
 }

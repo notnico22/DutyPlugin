@@ -6,7 +6,7 @@
 
     <groupId>com.example</groupId>
     <artifactId>DutyPlugin</artifactId>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
     <packaging>jar</packaging>
 
     <properties>
@@ -46,6 +46,12 @@
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>1.21.1-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.luckperms</groupId>
+            <artifactId>api</artifactId>
+            <version>5.4</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
