@@ -2,6 +2,7 @@ package com.example.dutyplugin;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -15,11 +16,9 @@ import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class DutyPlugin extends JavaPlugin {
     
@@ -98,12 +97,10 @@ public class DutyPlugin extends JavaPlugin {
             return handleDutyCommand(player, args);
             
         } else if (command.getName().equalsIgnoreCase("checktime")) {
-            if (!(sender instanceof Player)) {
-                sender.sendMessage(ChatColor.RED + "Only players can use this command!");
-                return true;
-            }
-            Player player = (Player) sender;
-            return handleCheckTimeCommand(player, args);
+            return handleCheckTimeCommand(sender, args);
+            
+        } else if (command.getName().equalsIgnoreCase("dutytimes")) {
+            return handleDutyTimesCommand(sender, args);
             
         } else if (command.getName().equalsIgnoreCase("resettime")) {
             if (!(sender instanceof Player)) {
@@ -199,16 +196,166 @@ public class DutyPlugin extends JavaPlugin {
         return true;
     }
     
-    private boolean handleCheckTimeCommand(Player player, String[] args) {
+    private boolean handleCheckTimeCommand(CommandSender sender, String[] args) {
+        // /checktime <duty_name> - check your own time
+        // /checktime <player> <duty_name> - check another player's time (requires permission)
+        
         if (args.length == 0) {
-            player.sendMessage(ChatColor.RED + "Usage: /checktime <duty_name>");
-            player.sendMessage(ChatColor.YELLOW + "Available duties: " + String.join(", ", dutyTypes.keySet()));
+            sender.sendMessage(ChatColor.RED + "Usage: /checktime <duty_name> or /checktime <player> <duty_name>");
+            sender.sendMessage(ChatColor.YELLOW + "Available duties: " + String.join(", ", dutyTypes.keySet()));
+            return true;
+        }
+        
+        if (args.length == 1) {
+            // Check own time
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(ChatColor.RED + "Console must specify a player: /checktime <player> <duty_name>");
+                return true;
+            }
+            
+            Player player = (Player) sender;
+            String dutyName = args[0];
+            UUID uuid = player.getUniqueId();
+            
+            long totalTime = getTotalTime(uuid, dutyName);
+            String formattedTime = formatDuration(totalTime);
+            
+            player.sendMessage(ChatColor.GREEN + "Your total time for " + 
+                             ChatColor.YELLOW + dutyName + 
+                             ChatColor.GREEN + ": " + ChatColor.AQUA + formattedTime);
+            return true;
+        }
+        
+        // Check another player's time
+        if (!sender.hasPermission("duty.checkothers")) {
+            sender.sendMessage(ChatColor.RED + "You don't have permission to check other players' times!");
+            return true;
+        }
+        
+        String targetName = args[0];
+        String dutyName = args[1];
+        
+        @SuppressWarnings("deprecation")
+        OfflinePlayer target = Bukkit.getOfflinePlayer(targetName);
+        
+        if (target == null || (!target.hasPlayedBefore() && !target.isOnline())) {
+            sender.sendMessage(ChatColor.RED + "Player not found: " + targetName);
+            return true;
+        }
+        
+        UUID targetUuid = target.getUniqueId();
+        long totalTime = getTotalTime(targetUuid, dutyName);
+        String formattedTime = formatDuration(totalTime);
+        
+        sender.sendMessage(ChatColor.GREEN + target.getName() + "'s total time for " + 
+                         ChatColor.YELLOW + dutyName + 
+                         ChatColor.GREEN + ": " + ChatColor.AQUA + formattedTime);
+        
+        return true;
+    }
+    
+    private boolean handleDutyTimesCommand(CommandSender sender, String[] args) {
+        // /dutytimes <duty_name> [page]
+        
+        if (!sender.hasPermission("duty.viewall")) {
+            sender.sendMessage(ChatColor.RED + "You don't have permission to view all duty times!");
+            return true;
+        }
+        
+        if (args.length == 0) {
+            sender.sendMessage(ChatColor.RED + "Usage: /dutytimes <duty_name> [page]");
+            sender.sendMessage(ChatColor.YELLOW + "Available duties: " + String.join(", ", dutyTypes.keySet()));
             return true;
         }
         
         String dutyName = args[0];
-        UUID uuid = player.getUniqueId();
+        int page = 1;
         
+        if (args.length > 1) {
+            try {
+                page = Integer.parseInt(args[1]);
+                if (page < 1) page = 1;
+            } catch (NumberFormatException e) {
+                sender.sendMessage(ChatColor.RED + "Invalid page number!");
+                return true;
+            }
+        }
+        
+        // Collect all players and their times
+        List<PlayerTimeEntry> entries = new ArrayList<>();
+        ConfigurationSection playersSection = dataConfig.getConfigurationSection("players");
+        
+        if (playersSection != null) {
+            for (String uuidStr : playersSection.getKeys(false)) {
+                try {
+                    UUID uuid = UUID.fromString(uuidStr);
+                    long time = getTotalTime(uuid, dutyName);
+                    
+                    if (time > 0) {
+                        @SuppressWarnings("deprecation")
+                        OfflinePlayer player = Bukkit.getOfflinePlayer(uuid);
+                        String playerName = player.getName() != null ? player.getName() : "Unknown";
+                        entries.add(new PlayerTimeEntry(playerName, time));
+                    }
+                } catch (IllegalArgumentException ignored) {}
+            }
+        }
+        
+        // Sort by time (descending)
+        entries.sort((a, b) -> Long.compare(b.time, a.time));
+        
+        if (entries.isEmpty()) {
+            sender.sendMessage(ChatColor.YELLOW + "No recorded times for " + dutyName);
+            return true;
+        }
+        
+        // Pagination
+        int entriesPerPage = 10;
+        int totalPages = (int) Math.ceil((double) entries.size() / entriesPerPage);
+        
+        if (page > totalPages) page = totalPages;
+        
+        int startIndex = (page - 1) * entriesPerPage;
+        int endIndex = Math.min(startIndex + entriesPerPage, entries.size());
+        
+        // Display header
+        sender.sendMessage(ChatColor.GOLD + "═══════════════════════════════════════");
+        sender.sendMessage(ChatColor.YELLOW + "Duty Times for " + ChatColor.AQUA + dutyName + 
+                         ChatColor.GRAY + " (Page " + page + "/" + totalPages + ")");
+        sender.sendMessage(ChatColor.GOLD + "═══════════════════════════════════════");
+        
+        // Display entries
+        for (int i = startIndex; i < endIndex; i++) {
+            PlayerTimeEntry entry = entries.get(i);
+            int rank = i + 1;
+            String rankColor = getRankColor(rank);
+            
+            sender.sendMessage(rankColor + "#" + rank + ". " + 
+                             ChatColor.WHITE + entry.playerName + 
+                             ChatColor.GRAY + " - " + 
+                             ChatColor.AQUA + formatDuration(entry.time));
+        }
+        
+        // Display footer
+        sender.sendMessage(ChatColor.GOLD + "═══════════════════════════════════════");
+        if (page < totalPages) {
+            sender.sendMessage(ChatColor.GRAY + "Use " + ChatColor.YELLOW + "/dutytimes " + dutyName + " " + (page + 1) + 
+                             ChatColor.GRAY + " for next page");
+        }
+        
+        return true;
+    }
+    
+    private String getRankColor(int rank) {
+        switch (rank) {
+            case 1: return ChatColor.GOLD.toString();
+            case 2: return ChatColor.GRAY.toString();
+            case 3: return ChatColor.YELLOW.toString();
+            default: return ChatColor.WHITE.toString();
+        }
+    }
+    
+    private long getTotalTime(UUID uuid, String dutyName) {
         String path = "players." + uuid.toString() + "." + dutyName;
         long totalTime = dataConfig.getLong(path, 0);
         
@@ -220,12 +367,7 @@ public class DutyPlugin extends JavaPlugin {
             }
         }
         
-        String formattedTime = formatDuration(totalTime);
-        player.sendMessage(ChatColor.GREEN + "Total time for " + 
-                         ChatColor.YELLOW + dutyName + 
-                         ChatColor.GREEN + ": " + ChatColor.AQUA + formattedTime);
-        
-        return true;
+        return totalTime;
     }
     
     private boolean handleResetTimeCommand(Player player, String[] args) {
@@ -323,6 +465,16 @@ public class DutyPlugin extends JavaPlugin {
         
         public long getStartTime() {
             return startTime;
+        }
+    }
+    
+    private static class PlayerTimeEntry {
+        String playerName;
+        long time;
+        
+        public PlayerTimeEntry(String playerName, long time) {
+            this.playerName = playerName;
+            this.time = time;
         }
     }
 }

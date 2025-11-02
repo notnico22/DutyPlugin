@@ -1,5 +1,5 @@
 name: DutyPlugin
-version: 1.0.0
+version: 1.2.0
 main: com.example.dutyplugin.DutyPlugin
 api-version: '1.21'
 author: notnico22
@@ -8,11 +8,16 @@ description: A duty tracking plugin with Discord integration
 commands:
   duty:
     description: Toggle duty status or go on duty for a specific role
-    usage: /duty [duty_name] - Use /duty <name> to go on duty, /duty to go off duty, /duty reload to reload config
+    usage: /duty [duty_name] - Use /duty <n> to go on duty, /duty to go off duty, /duty reload to reload config
     
   checktime:
-    description: Check your total duty time for a specific duty
-    usage: /checktime <duty_name>
+    description: Check duty time for yourself or another player
+    usage: /checktime <duty_name> or /checktime <player> <duty_name>
+    
+  dutytimes:
+    description: View a leaderboard of all players' duty times
+    usage: /dutytimes <duty_name> [page]
+    permission: duty.viewall
     
   resettime:
     description: Reset duty time for yourself
@@ -27,9 +32,17 @@ permissions:
   duty.reload:
     description: Allows reloading the plugin config
     default: op
+  
+  duty.checkothers:
+    description: Allows checking other players' duty times
+    default: op
+  
+  duty.viewall:
+    description: Allows viewing the duty times leaderboard
+    default: op
     
   duty.*:
-    description: Allows all duty types
+    description: Allows all duty types and admin commands
     default: op
     children:
       duty.staff: true
@@ -38,6 +51,10 @@ permissions:
       duty.support: true
       duty.builder: true
       duty.helper: true
+      duty.reload: true
+      duty.checkothers: true
+      duty.viewall: true
+      duty.reset: true
       
   # Individual duty permissions - grant these to specific players/groups
   duty.staff:
