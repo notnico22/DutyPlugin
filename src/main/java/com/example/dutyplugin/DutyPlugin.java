@@ -8,6 +8,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.configuration.ConfigurationSection;
 
 import java.io.File;
 import java.io.IOException;
@@ -17,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public class DutyPlugin extends JavaPlugin {
@@ -25,14 +27,16 @@ public class DutyPlugin extends JavaPlugin {
     private FileConfiguration dataConfig;
     private Map<UUID, DutySession> activeSessions;
     private String webhookUrl;
+    private Map<String, String> dutyTypes; // duty name -> permission
     
     @Override
     public void onEnable() {
         activeSessions = new HashMap<>();
+        dutyTypes = new HashMap<>();
         
         // Create config
         saveDefaultConfig();
-        webhookUrl = getConfig().getString("discord-webhook-url", "");
+        loadConfig();
         
         // Load data file
         dataFile = new File(getDataFolder(), "dutydata.yml");
@@ -46,6 +50,7 @@ public class DutyPlugin extends JavaPlugin {
         dataConfig = YamlConfiguration.loadConfiguration(dataFile);
         
         getLogger().info("DutyPlugin has been enabled!");
+        getLogger().info("Loaded " + dutyTypes.size() + " duty types from config.");
     }
     
     @Override
@@ -59,24 +64,70 @@ public class DutyPlugin extends JavaPlugin {
         getLogger().info("DutyPlugin has been disabled!");
     }
     
+    private void loadConfig() {
+        reloadConfig();
+        webhookUrl = getConfig().getString("discord-webhook-url", "");
+        
+        // Load duty types from config
+        dutyTypes.clear();
+        ConfigurationSection dutiesSection = getConfig().getConfigurationSection("duties");
+        if (dutiesSection != null) {
+            Set<String> dutyNames = dutiesSection.getKeys(false);
+            for (String dutyName : dutyNames) {
+                String permission = dutiesSection.getString(dutyName + ".permission");
+                if (permission != null && !permission.isEmpty()) {
+                    dutyTypes.put(dutyName, permission);
+                }
+            }
+        }
+    }
+    
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) {
-            sender.sendMessage(ChatColor.RED + "Only players can use this command!");
-            return true;
-        }
-        
-        Player player = (Player) sender;
-        
         if (command.getName().equalsIgnoreCase("duty")) {
+            if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
+                return handleReloadCommand(sender);
+            }
+            
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(ChatColor.RED + "Only players can use this command!");
+                return true;
+            }
+            
+            Player player = (Player) sender;
             return handleDutyCommand(player, args);
+            
         } else if (command.getName().equalsIgnoreCase("checktime")) {
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(ChatColor.RED + "Only players can use this command!");
+                return true;
+            }
+            Player player = (Player) sender;
             return handleCheckTimeCommand(player, args);
+            
         } else if (command.getName().equalsIgnoreCase("resettime")) {
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(ChatColor.RED + "Only players can use this command!");
+                return true;
+            }
+            Player player = (Player) sender;
             return handleResetTimeCommand(player, args);
         }
         
         return false;
+    }
+    
+    private boolean handleReloadCommand(CommandSender sender) {
+        if (!sender.hasPermission("duty.reload")) {
+            sender.sendMessage(ChatColor.RED + "You don't have permission to reload the config!");
+            return true;
+        }
+        
+        loadConfig();
+        sender.sendMessage(ChatColor.GREEN + "DutyPlugin config reloaded! Loaded " + 
+                         ChatColor.YELLOW + dutyTypes.size() + 
+                         ChatColor.GREEN + " duty types.");
+        return true;
     }
     
     private boolean handleDutyCommand(Player player, String[] args) {
@@ -111,9 +162,18 @@ public class DutyPlugin extends JavaPlugin {
         // Going on duty
         String dutyName = args[0];
         
+        // Check if duty type exists in config
+        if (!dutyTypes.containsKey(dutyName)) {
+            player.sendMessage(ChatColor.RED + "Unknown duty type: " + dutyName);
+            player.sendMessage(ChatColor.YELLOW + "Available duties: " + String.join(", ", dutyTypes.keySet()));
+            return true;
+        }
+        
         // Check permission
-        if (!player.hasPermission("duty." + dutyName)) {
+        String requiredPermission = dutyTypes.get(dutyName);
+        if (!player.hasPermission(requiredPermission)) {
             player.sendMessage(ChatColor.RED + "You don't have permission to go on duty for " + dutyName + "!");
+            player.sendMessage(ChatColor.GRAY + "Required permission: " + requiredPermission);
             return true;
         }
         
@@ -142,6 +202,7 @@ public class DutyPlugin extends JavaPlugin {
     private boolean handleCheckTimeCommand(Player player, String[] args) {
         if (args.length == 0) {
             player.sendMessage(ChatColor.RED + "Usage: /checktime <duty_name>");
+            player.sendMessage(ChatColor.YELLOW + "Available duties: " + String.join(", ", dutyTypes.keySet()));
             return true;
         }
         

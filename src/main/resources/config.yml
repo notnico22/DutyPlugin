@@ -2,6 +2,33 @@
 
 # Discord Webhook URL for logging
 # Get this from your Discord server settings -> Integrations -> Webhooks
-discord-webhook-url: "https://discord.com/api/webhooks/1434328555575050290/yof7j9B2P-cNlojYzx5sBKTfVhCHvGquo1fr1suNY1lM9bAZfQy6VAaW3TkA8jso03tO"
+discord-webhook-url: "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL_HERE"
 
-# You can add additional settings here in the future
+# Duty Types Configuration
+# Add as many duty types as you need
+# Format:
+#   DutyName:
+#     permission: "duty.permission.here"
+
+duties:
+  Staff:
+    permission: "duty.staff"
+  
+  Admin:
+    permission: "duty.admin"
+  
+  Moderator:
+    permission: "duty.moderator"
+  
+  Support:
+    permission: "duty.support"
+  
+  Builder:
+    permission: "duty.builder"
+  
+  Helper:
+    permission: "duty.helper"
+
+# To add more duties, just copy the format above:
+# YourDutyName:
+#   permission: "duty.yourpermission"
